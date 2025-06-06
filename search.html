@@ -381,23 +381,26 @@
     </div>
 
     <div class="opera-sidebar">
-        <div class="nav-icon active" id="homeButton">
+        <div class="nav-icon active" id="homeButton" data-target-file="speed-dial">
             <i class="bi bi-house-add-fill"></i>
         </div>
-        <div class="nav-icon">
+        <div class="nav-icon" id="controllerButton" data-target-file="games.html">
             <i class="bi bi-controller"></i>
         </div>
-        <div class="nav-icon">
+        <div class="nav-icon" id="gearButton" data-target-file="settings.html">
             <i class="bi bi-gear-fill"></i>
         </div>
-        <div class="nav-icon">
+        <div class="nav-icon" id="appsButton" data-target-file="apps.html">
             <i class="bi bi-google-play"></i>
         </div>
-        <div class="nav-icon">
+
+        <div class="nav-icon" id="heartButton" data-target-file="favorites.html">
             <i class="bi bi-balloon-heart-fill"></i>
         </div>
     </div>
-
+<script>
+    apps()
+</script>
     <script src="/active/uv/uv.bundle.js"></script>
     <script src="/active/uv/uv.config.js"></script>
     <script src="/active/uv/uv.sw.js"></script>
@@ -416,6 +419,7 @@
         const searchInput = document.getElementById('searchInput');
         const tabGroup = document.getElementById('tabGroup');
         const addTabButton = document.getElementById('addTabButton');
+        const sidebarNavIcons = document.querySelectorAll('.opera-sidebar .nav-icon');
 
         let tabCounter = 1;
         let activeTabId = 'speed-dial';
@@ -448,20 +452,25 @@
                     if (url.hostname.includes('.')) return url.toString();
                 } catch {}
             }
-            return `https://duckduckgo.com/?q=${encodeURIComponent(query)}`;
+            return `https://html.duckduckgo.com/?q=${encodeURIComponent(query)}`;
         }
 
-        function loadUrl(url) {
+        function loadUrl(url, isLocalFile = false) {
             if (!url) {
                 showHome();
                 return;
             }
-            const encoded = __uv$config.encodeUrl(url);
-            const proxyUrl = __uv$config.prefix + encoded;
+            
+            let finalUrl;
+            if (isLocalFile) {
+                finalUrl = url; 
+            } else {
+                finalUrl = __uv$config.prefix + __uv$config.encodeUrl(url);
+            }
             
             iframeContainer.style.display = 'block';
             speedDialContainer.style.display = 'none';
-            contentFrame.src = proxyUrl;
+            contentFrame.src = finalUrl;
             
             if (activeTabId && tabStates[activeTabId]) {
                 tabStates[activeTabId].searchInput = url;
@@ -481,6 +490,9 @@
             });
             document.querySelector('.tab[data-tab-id="speed-dial"]').classList.add('active');
             activeTabId = 'speed-dial';
+            
+            sidebarNavIcons.forEach(icon => icon.classList.remove('active'));
+            homeButton.classList.add('active');
         }
 
         function setActiveTab(tabElement, tabId) {
@@ -493,9 +505,11 @@
             if (tabStates[activeTabId]) {
                 searchInput.value = tabStates[activeTabId].searchInput || '';
                 if (tabStates[activeTabId].url) {
-                    loadUrl(tabStates[activeTabId].url);
+                    loadUrl(tabStates[activeTabId].url, tabStates[activeTabId].type === 'sidebar-file');
                 } else if (tabStates[activeTabId].type === 'speed-dial') {
                     showHome();
+                } else if (tabStates[activeTabId].type === 'sidebar-file') {
+                    loadUrl(tabStates[activeTabId].file, true); 
                 } else {
                     iframeContainer.style.display = 'none';
                     speedDialContainer.style.display = 'flex';
@@ -561,8 +575,9 @@
                     if (activeTabId && tabStates[activeTabId]) {
                         tabStates[activeTabId].url = rawUrl;
                         tabStates[activeTabId].searchInput = query;
+                        tabStates[activeTabId].type = 'web-page';
                     }
-                    loadUrl(rawUrl);
+                    loadUrl(rawUrl, false); 
                 }
             });
 
@@ -586,6 +601,39 @@
                 }
             });
 
+            sidebarNavIcons.forEach(icon => {
+                icon.addEventListener('click', () => {
+                    const targetFile = icon.dataset.targetFile;
+
+                    sidebarNavIcons.forEach(navIcon => navIcon.classList.remove('active'));
+                    icon.classList.add('active');
+
+                    if (targetFile === 'speed-dial') {
+                        showHome();
+                    } else if (targetFile) {
+                        tabCounter++;
+                        const newTabId = `tab-${tabCounter}`;
+                        const newTab = document.createElement('div');
+                        newTab.classList.add('tab');
+                        newTab.setAttribute('data-tab-id', newTabId);
+                        newTab.setAttribute('data-type', 'sidebar-file');
+                        newTab.innerHTML = `
+                            <i class="${icon.querySelector('i').className}"></i>
+                            <span>${targetFile.replace('.html', '').charAt(0).toUpperCase() + targetFile.replace('.html', '').slice(1)}</span>
+                            <i class="bi bi-x close-tab-icon"></i>
+                        `;
+                        tabGroup.insertBefore(newTab, addTabButton);
+                        attachTabListeners(newTab, newTabId);
+
+                        tabStates[newTabId] = { url: targetFile, searchInput: targetFile, type: 'sidebar-file', file: targetFile };
+                        
+                        setActiveTab(newTab, newTabId);
+                        loadUrl(targetFile, true); 
+                    }
+                });
+            });
+
+
             contentFrame.addEventListener('load', function() {
                 try {
                     const currentUrl = contentFrame.contentWindow.location.href;
@@ -595,23 +643,26 @@
                         if (activeTabId && tabStates[activeTabId]) {
                             tabStates[activeTabId].url = decoded;
                             tabStates[activeTabId].searchInput = decoded;
+                            tabStates[activeTabId].type = 'web-page';
                         }
                     } else if (currentUrl === 'about:blank' || currentUrl.startsWith('blob:') || currentUrl.startsWith('moz-extension:')) {
                         searchInput.value = '';
                         if (activeTabId && tabStates[activeTabId]) {
                             tabStates[activeTabId].searchInput = '';
                             tabStates[activeTabId].url = null;
+                            tabStates[activeTabId].type = 'speed-dial';
                         }
                     } else {
                         searchInput.value = currentUrl;
                         if (activeTabId && tabStates[activeTabId]) {
                             tabStates[activeTabId].searchInput = currentUrl;
                             tabStates[activeTabId].url = currentUrl;
+                            tabStates[activeTabId].type = 'web-page';
                         }
                     }
                 } catch (e) {
                     if (activeTabId && tabStates[activeTabId]) {
-                         searchInput.value = tabStates[activeTabId].searchInput || 'Unable to display URL';
+                        searchInput.value = tabStates[activeTabId].searchInput || 'Unable to display URL';
                     }
                 }
             });
